@@ -1,0 +1,17 @@
+{
+  "name": "@floonet/dsh",
+  "version": "0.3.0",
+  "description": "floonet integration for DeepSeek Harness — makes a dsh session reachable from other agent sessions",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

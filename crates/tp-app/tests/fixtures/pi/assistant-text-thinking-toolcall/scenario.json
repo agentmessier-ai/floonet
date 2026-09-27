@@ -1,0 +1,7 @@
+{
+  "name": "assistant-text-thinking-toolcall",
+  "axis": "roles",
+  "why": "The three content blocks an assistant message may carry, in one entry: text becomes the turn's text, thinking is indexed separately, and a toolCall survives only as {name, digest}. A secret sits in the thinking block because that is where models restate them.",
+  "cwd": "/Users/test/dev/widgets",
+  "file_name": "2026-05-04T10-00-00-000Z_aaaa0001-1111-2222-3333-444444444444.jsonl"
+}

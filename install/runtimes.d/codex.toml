@@ -1,0 +1,122 @@
+# OpenAI Codex CLI, as a declarative adapter. Nothing in floonet is compiled
+# for codex: this file is the entire integration for the indexing half, and
+# every non-default field below marks a place where the other runtimes agreed
+# with each other by coincidence.
+#
+# The rollout format is not a documented stable interface. Treat this as
+# best-effort discovery, and prefer the hook path (SessionStart hands floonet
+# `session_id`, `cwd` and `transcript_path` directly) for anything that must
+# not silently stop working.
+
+id = "codex"
+name = "Codex"
+# No `${VAR:-…}` here on purpose. The root supports environment expansion
+# (see `expand_path`), but naming CODEX_HOME without having verified that this
+# runtime actually reads it would be a guess baked into a shipped file, and a
+# wrong variable name fails the same silent way an unset one does. A user whose
+# codex home is elsewhere can override this file.
+root = "~/.codex/sessions"
+
+# `sessions/YYYY/MM/DD/rollout-*.jsonl`. The default is one level
+# (`root/<project>/<file>`).
+dir_depth = 3
+
+# `rollout-2026-04-08T09-32-49-019d6c6f-f1e8-7abc-afed-cba987654321.jsonl`.
+# Neither `stem` nor `after_underscore` can reach that id: the stem is not the
+# id, and the timestamp contains the same `-` the UUID does.
+native_id = "trailing_uuid"
+
+# Every field below is one level deeper than the shipped runtimes put it.
+type_path = "payload.type"
+cwd_path = "payload.cwd"       # written once, on the session_meta line
+ts_path = "timestamp"
+content_path = "payload.content"
+
+role_source = "message_role"
+role_path = "payload.role"
+# `developer` is codex's channel for injected environment and permission
+# preamble. It is genuinely part of the transcript and is kept as user-side
+# content rather than dropped — floonet reports what the record says.
+user_roles = ["user", "developer"]
+assistant_roles = ["assistant"]
+
+# Two tags for one concept: codex names the block by direction, and the field
+# holding the text is `text` in both cases.
+text_block = ["output_text", "input_text"]
+text_field = "text"
+tool_block = "function_call"
+tool_name_field = "name"
+tool_input_field = "arguments"
+
+# The turn's address: `msg_<uuid>` on messages, `rs_…` on reasoning items.
+# Rollouts written before the field existed degrade to a NULL uuid, which is
+# the honest record for a format that had no address there.
+uuid_path = "payload.id"
+
+# Usage is NOT on the message: codex emits it as a separate `event_msg` /
+# `token_count` record. Left unset rather than pointed somewhere plausible —
+# a wrong number is worse than an absent one.
+
+# `payload.type == "message"` is NOT enough on its own: `event_msg` payloads
+# carry their own `type`, so token-count and task-lifecycle records would be
+# read as conversation. The outer discriminator has to be required too.
+[[require]]
+path = "type"
+equals = "response_item"
+
+[capabilities]
+scannable = true
+pane = true
+process_match = "codex"
+# What floonet types into a codex pane to make it drain its inbox. Plain
+# English rather than a slash command, because codex has none and reaches
+# floonet through MCP tools: the sentence is what makes the model call
+# `floo_inbox`. It is still a fixed string from this descriptor — no part of
+# any message crosses the pane.
+control_string = "Check your floonet inbox: call the floo_inbox tool, do what each message asks, and answer it with floo_reply."
+multiplexed = false
+heartbeats = false
+# `fl reply` and `fl ack` are shell commands, and codex runs its shell confined
+# to the session's workspace. floonet's mailbox is in `~/.teleport`, outside it,
+# so both fail as a readonly database. The MCP server is spawned by codex
+# itself rather than from inside that confinement, so `floo_reply` and
+# `floo_ack` write the same database successfully.
+#
+# The reason travels with the instruction on purpose: an agent that meets
+# "attempt to write a readonly database" without knowing why escalates to a
+# permission prompt nobody is watching, instead of using the tool it already
+# has.
+reply_hint  = "the floo_reply tool (message_id: {id}). NOT `fl reply` — codex's shell is sandboxed to the session workspace and cannot write floonet's mailbox"
+ack_hint    = "the floo_ack tool"
+
+# codex emits reasoning as its own `response_item` with no `payload.role`, so
+# the role mapping above would drop it. Both halves are different facts:
+#   summary            → readable reasoning, when the model produced any
+#   encrypted_content  → reasoning happened and cannot be read
+# Storing "" for the second would assert that no reasoning happened;
+# `thinking_state = 'opaque'` is the honest record.
+[[reasoning_rules]]
+entry_type  = "reasoning"
+text_path   = "payload.summary"
+block_type  = "summary_text"
+opaque_path = "payload.encrypted_content"
+
+# Compaction. Positional: codex writes a `compacted` rollout line whose
+# `replacement_history` is the complete post-compaction context, with the
+# superseded lines left in the file. Its own reader reverse-scans to the
+# newest such line and treats it plus everything after as current.
+#
+# `[[require]]` above rejects this line; the boundary survives because
+# compaction is checked before `require` is applied, and that ordering is a
+# contract of the engine.
+#
+# The `message` (codex's distilled summary) is not indexed as a turn — unlike
+# pi's. No recall hole: codex leaves the superseded lines in the file, so
+# their content stays searchable and merely reads as `superseded`.
+#
+# `ThreadRolledBack { num_turns }` is codex's other supersession marker and is
+# not handled: it says how many user turns to drop without naming them, so
+# honouring it needs turn re-segmentation rather than a boundary.
+[[compaction_markers]]
+path = "type"
+equals = "compacted"

@@ -1,0 +1,19 @@
+{
+  "name": "floonet",
+  "owner": {
+    "name": "agentmessier-ai"
+  },
+  "description": "Floonet — cross-agent session search, paired cross-machine federation, and mailbox delivery between agent sessions.",
+  "version": "0.3.0",
+  "plugins": [
+    {
+      "name": "floonet",
+      "source": "./plugin",
+      "description": "Search across sessions, query trusted peers, and message live agent sessions — from any chat.",
+      "version": "0.3.0",
+      "author": {
+        "name": "agentmessier-ai"
+      }
+    }
+  ]
+}

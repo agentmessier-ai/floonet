@@ -1,0 +1,4 @@
+{"type":"session","version":0,"id":"session-1111","createdAt":1000,"cwd":"/w/demo"}
+{"type":"user/message","seq":1,"time":1001,"data":{"content":[{"type":"text","text":"first"}]}}
+{"type":"assistant/message","seq":2,"time":1002,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"second"}]}}}
+{"type":"session/title","seq":3,"time":1003,"data":{"title":"a demo"}}

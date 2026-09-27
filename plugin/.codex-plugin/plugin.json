@@ -1,0 +1,7 @@
+{
+  "name": "floonet",
+  "version": "0.3.0",
+  "description": "Cross-agent session search, cross-machine federation (paired, signed, encrypted), and mailbox delivery between agent sessions — install/install.sh installs the `fl`/`fld` binaries this plugin talks to.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

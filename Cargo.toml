@@ -1,0 +1,87 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tp-app",
+    "crates/tp-core",
+    "crates/tp-db",
+    "crates/tp-ingest",
+    "crates/tp-search",
+    "crates/tp-reach",
+    "crates/tp-net",
+    "crates/tp-serve",
+    "crates/tp",
+]
+
+[workspace.package]
+# Bump when cutting a release: this is the number a user can repeat from
+# memory; `VERSION_LINE` carries the commit sha for the precise answer. The
+# plugin, marketplace and dsh manifests carry the same number, unenforced.
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+# The max `rust_version` across `cargo metadata --all-features`, verified in
+# CI. Set by transitive dependencies, not our code; declared so an operator
+# building via install.sh gets "needs Rust >= 1.88" and not a manifest error.
+rust-version = "1.88"
+# Internal workspace, not crates.io packages: fl/fld are built from this tree
+# by install.sh. Stops an accidental `cargo publish`, and cargo-deny needs it
+# because a publishable crate cannot carry path-only dependencies.
+publish = false
+
+# Lints live here rather than in CI's clippy invocation so a local `cargo
+# clippy` gets the same answer CI does. A print bypasses the routing in
+# `tp_core::logging`; sites where output is the product (crates/tp/src/cmd/*,
+# bin/tpd.rs, build.rs, tests) are exempted explicitly at the module.
+[workspace.lints.clippy]
+print_stdout = "warn"
+print_stderr = "warn"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+# SIGPIPE restoration (tp-core::exit_quietly_on_broken_pipe) and a kill(pid, 0)
+# liveness probe in tp-reach — both need the raw syscall, nothing more.
+libc = "0.2"
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+# dsh stores a session as concatenated zstd frames. Pure Rust on purpose: a
+# C-backed decoder would put a `cc` toolchain between a user and `cargo install`.
+ruzstd = { version = "0.7", default-features = false, features = ["std"] }
+
+# The inner loop. Defaults give every transitive dependency full DWARF, which
+# is the bulk of a debug build's time and of `target/debug`'s size.
+[profile.dev]
+# Enough for a backtrace to name a file and a line; not enough to inspect a
+# local in a debugger. When you need that, `--profile debugging` below.
+debug = "line-tables-only"
+# Packed, not the macOS default of unpacked: unpacked leaves every `.o` in
+# `target/debug/deps` forever, and Gatekeeper's first-exec assessment of each
+# new test binary scales with the entry count of its directory.
+split-debuginfo = "packed"
+
+# Dependencies only — `"*"` does not match workspace members, so this never
+# applies to the crates under `crates/`.
+[profile.dev.package."*"]
+# Nobody single-steps tokio or rustls to debug floonet.
+debug = 0
+# Built once, run on every `cargo test`: the extra compile is paid back the
+# first time a test does real work in rusqlite or regex.
+opt-level = 1
+
+# `cargo build --profile debugging` — full debug info when a backtrace is not
+# enough. Its own profile so reaching for a debugger never means editing a
+# shared file that would take the default back for everyone if committed.
+[profile.debugging]
+inherits = "dev"
+debug = true
+
+[profile.release]
+opt-level = 3
+# Fat LTO. Thin LTO trades a modest link-time saving for a much larger binary;
+# the answer for slow machines is the prebuilt release, not a worse binary for
+# everyone, which is why release.yml must keep working for both targets.
+lto = true
