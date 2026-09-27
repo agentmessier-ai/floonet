@@ -1,0 +1,121 @@
+# pi agent harness. Format per pi's published session-format spec, v3. This
+# file is the pi implementation: it is compiled into the binary via
+# `include_str!` (decl.rs), and an installed copy exists so a user can read
+# and override it.
+id = "pi"
+# No `${VAR:-…}` here on purpose. The root supports environment expansion
+# (see `expand_path`), but naming a home override without having verified that this
+# runtime actually reads it would be a guess baked into a shipped file, and a
+# wrong variable name fails the same silent way an unset one does. A user whose
+# pi home is elsewhere can override this file.
+root = "~/.pi/agent/sessions"
+name = "pi"
+native_id = "after_underscore"     # <timestamp>_<uuid>.jsonl
+role_source = "message_role"       # role lives at message.role, not entry type
+# toolResult maps to user to mirror Claude Code, where tool results arrive
+# inside `type: "user"` records — keeps both runtimes symmetric under one query.
+user_roles = ["user", "toolResult", "bashExecution", "custom"]
+assistant_roles = ["assistant", "branchSummary", "compactionSummary"]
+ts_path = "timestamp"
+
+# Where a compaction's kept range starts (see `[[compaction_markers]]` below).
+#
+# Must live up here with the other root keys: in TOML a bare key after a table
+# header belongs to that table, so placing it next to the marker it describes
+# would make it a field of `[[compaction_markers]]`, silently dropped, and the
+# boundary would fall back to positional.
+compaction_keeps_from = "firstKeptEntryId"
+content_path = "message.content"
+usage_in_path = "message.usage.input"
+usage_out_path = "message.usage.output"
+text_block = "text"
+thinking_block = "thinking"        # thinkingSignature is never read, so never indexed
+tool_block = "toolCall"
+tool_name_field = "name"
+tool_input_field = "arguments"
+text_fallbacks = ["message.summary"]
+
+# Source identity/lineage. Entry-level in pi: `id`, `parentId`, `modelId`
+# (present on every entry type, so one dotted path). pi's usage block has no
+# cache-token fields.
+uuid_path = "id"
+parent_uuid_path = "parentId"
+model_path = "modelId"
+
+# Summary-bearing entries are indexed deliberately: a compaction summary is the
+# distilled content of messages pi no longer replays, so skipping it would put a
+# recall hole in exactly the long sessions search matters most for. `custom` is
+# NOT here — pi's spec says it never reaches the model.
+[[entry_rules]]
+entry_type = "compaction"
+role = "assistant"
+text_path = "summary"
+# Token counts sit at the top level on these entries, not under `message`
+# like every other pi record, so they are stated per rule rather than
+# inherited from `usage_in_path`.
+usage_in_path = "usage.input"
+usage_out_path = "usage.output"
+
+[[entry_rules]]
+entry_type = "branch_summary"
+role = "assistant"
+text_path = "summary"
+usage_in_path = "usage.input"
+usage_out_path = "usage.output"
+
+[[entry_rules]]
+entry_type = "custom_message"
+role = "user"
+text_path = "content"
+usage_in_path = "usage.input"
+usage_out_path = "usage.output"
+
+# bashExecution keeps no `content`; its payload is the command and its output.
+[text_join]
+prefix = "$ "
+paths = ["message.command", "message.output"]
+sep = "\n"
+
+# What this harness is, and what floonet must not assume about it: a
+# one-session-per-process runtime the process scan can find and type into,
+# which cannot renew its own presence (its SessionStart hook fires once; there
+# is no periodic event, which is why the scan exists).
+
+[capabilities]
+scannable   = true    # `ps` + tmux/iTerm2 can find it
+multiplexed = false   # one process : one session
+heartbeats  = false   # cannot renew presence — the scan is authoritative
+pane        = true    # has a tty to type the control string into
+# `=` anchors an EXACT match. Unlike claude, a substring would false-positive
+# on `pip`, `gpio-tool`, and anything else containing "pi".
+process_match = "=pi"
+
+# pi's native session name. It is an entry in the session tree, not a header
+# field, so it is versioned over time: `getSessionName()` resolves it by
+# reverse scan and treats a whitespace value as clearing the name, which
+# `SessionMeta::set_title` reproduces.
+#
+# `parentId` is a JSON `null` on these, not a string: a null must read as "no
+# edge", never as an edge called `"null"`.
+#
+# `source = "user"` because pi has no model-generated name: `SessionInfoEntry`
+# is documented as a user-defined display name, and nothing else writes it.
+[[title_rules]]
+entry_type = "session_info"
+title_path = "name"
+source     = "user"
+
+# Compaction. Anchored, not positional: pi's `compaction` entry carries
+# `firstKeptEntryId`, which points earlier than the marker itself. Reading the
+# marker's own position as the boundary would report still-live entries as
+# superseded, which is the wrong direction to be wrong in.
+#
+# `buildContextEntries()` walks leaf→root and, on hitting a compaction,
+# includes the compaction plus entries from `firstKeptEntryId` forward — so
+# the anchor is kept, which is why the writer uses `<` rather than `<=`.
+#
+# The entry is also indexed as a turn (see `entry_rules` above): its `summary`
+# is new context rather than superseded, and lands after its own boundary.
+[[compaction_markers]]
+path = "type"
+equals = "compaction"

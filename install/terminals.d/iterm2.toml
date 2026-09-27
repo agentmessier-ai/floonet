@@ -1,0 +1,18 @@
+# iTerm2. Migrated from the hand-written script `wake` used to hold;
+# `the_shipped_descriptors_load_and_iterm2_still_matches_the_original` proves
+# THIS FILE generates that script (the in-code equivalence test never reads
+# it), which is what makes the mechanism trustworthy for terminals nobody has
+# verified by hand.
+id         = "iterm2"
+os         = "macos"
+kind       = "applescript"
+app        = "iTerm2"
+
+# iTerm2 nests one level deeper than Terminal.app: a tab holds sessions
+# (split panes), and the tty lives on the session, not the tab.
+containers = ["windows", "tabs", "sessions"]
+tty_of     = "tty"
+
+# `tell s to write text "…"`, NOT `write text "…" to s` — the latter is a
+# syntax error (-2741), verified against a live iTerm2. floonet supplies the quoting.
+send       = "tell {leaf} to write text {text}"

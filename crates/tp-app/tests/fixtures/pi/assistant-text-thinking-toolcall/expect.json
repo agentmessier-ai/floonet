@@ -1,0 +1,10 @@
+{
+  "session_count": 1,
+  "session": { "cwd": "/Users/test/dev/widgets" },
+  "turns": [
+    { "role": "user", "text_is": "how do I sort a list of records" },
+    { "role": "assistant", "text_is": "use sorted() with a key function",
+      "thinking_contains": "stable ordering", "tools": ["Bash"] }
+  ],
+  "absent_everywhere": ["sk-ant-api03-NOTAREALKEYNOTAREALKEYNOTAREAL"]
+}
