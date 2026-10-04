@@ -1,0 +1,12 @@
+-- The ingest checkpoint table, dropped with the mechanism that wrote it.
+--
+-- `ingest_state` recorded (inode, byte_offset, last_seq) per transcript so the
+-- watcher could resume where it stopped. Nothing copies a transcript into this
+-- database any more: a runtime that writes one is read from the file on the
+-- query that asks, and a runtime that writes none pushes through `fl ingest`,
+-- whose sequencing comes from `MAX(seq)`.
+--
+-- The turns those sweeps wrote are left alone. This drops the bookkeeping,
+-- not the corpus: an existing install keeps every indexed turn it has and
+-- stops adding to it from files.
+DROP TABLE IF EXISTS ingest_state;

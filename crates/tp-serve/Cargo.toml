@@ -1,0 +1,38 @@
+[package]
+name = "tp-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+tp-core = { path = "../tp-core" }
+tp-net = { path = "../tp-net" }
+tp-app = { path = "../tp-app" }
+tp-search = { path = "../tp-search" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+axum = "0.7"
+# tls-rustls-no-provider, not tls-rustls — same reason as tp-net: the plain
+# feature re-enables rustls/aws-lc-rs. Provider selection lives in tp-net.
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+# Same list as tp-net, and for the same reason recorded there: "full" would be
+# unified across the graph and quietly re-enable fs/process/io-std/signal for
+# every crate that deliberately asked for less.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time", "io-util"] }
+
+[dev-dependencies]
+# Test-only, and that is the point: the peer adapter reaches the database ONLY
+# through tp-app, so a production dependency here would be a way back around
+# the layer. Fixtures still need to build one.
+tp-db = { path = "../tp-db" }
+tempfile = "3"
+chrono.workspace = true
+tp-ingest = { path = "../tp-ingest" }
+tp-reach = { path = "../tp-reach" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[lints]
+workspace = true

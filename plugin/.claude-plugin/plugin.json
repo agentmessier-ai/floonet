@@ -1,0 +1,28 @@
+{
+  "name": "floonet",
+  "displayName": "Floonet",
+  "description": "Cross-agent session search, cross-machine federation (paired, signed, encrypted), and mailbox delivery between agent sessions — install/install.sh installs the `fl`/`fld` binaries this plugin talks to.",
+  "version": "0.3.3",
+  "author": {
+    "name": "agentmessier-ai"
+  },
+  "homepage": "https://github.com/agentmessier-ai/floonet",
+  "repository": "https://github.com/agentmessier-ai/floonet",
+  "license": "MIT",
+  "keywords": [
+    "floonet",
+    "cross-session",
+    "cross-machine",
+    "search",
+    "federation",
+    "mcp"
+  ],
+  "mcpServers": {
+    "floonet": {
+      "command": "fl",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
