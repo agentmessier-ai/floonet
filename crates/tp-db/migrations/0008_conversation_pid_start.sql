@@ -1,0 +1,18 @@
+-- Process start time, as the thing that makes a conversation address stable.
+--
+-- A conversation is recognised across a compaction by (runtime, pid, cwd), and
+-- a pid alone is reusable. Bounding recognition by a time window since the
+-- conversation was last seen makes the address state that must be maintained:
+-- if nothing touches the row, the address expires while the process it names
+-- is still running. `pid + start time` is observed, not maintained: the OS
+-- answers at any moment, so there is no refresh to miss and no daemon whose
+-- death expires the address.
+--
+-- Stored as the opaque string `ps -o lstart=` prints (read under LC_ALL=C),
+-- not a parsed timestamp. Identity needs only equality — a reused pid has a
+-- later start and a different string — and not parsing removes a silent
+-- locale-dependent failure.
+--
+-- NULL for rows written before this column existed, and for any process whose
+-- start time could not be read; those fall back to the time window.
+ALTER TABLE conversation ADD COLUMN pid_start TEXT;

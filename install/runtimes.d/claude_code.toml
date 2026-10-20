@@ -1,0 +1,123 @@
+# Claude Code transcripts. This file is the claude_code implementation: it is
+# compiled into the binary via `include_str!` (decl.rs), and an installed copy
+# exists so a user can read and override it.
+id = "claude_code"
+# `$CLAUDE_CONFIG_DIR` relocates Claude Code's config directory; `~/.claude` is
+# the default. Unset — the ordinary case — this resolves exactly as the bare
+# path did.
+root = "${CLAUDE_CONFIG_DIR:-~/.claude}/projects"
+name = "Claude Code"
+native_id = "stem"                 # <uuid>.jsonl — the stem IS the session id
+role_source = "entry_type"         # role is the entry's own `type`
+user_roles = ["user"]
+assistant_roles = ["assistant"]
+ts_path = "timestamp"
+content_path = "message.content"
+usage_in_path = "message.usage.input_tokens"
+usage_out_path = "message.usage.output_tokens"
+text_block = "text"
+thinking_block = "thinking"
+tool_block = "tool_use"
+tool_name_field = "name"
+tool_input_field = "input"
+
+# Source identity/lineage/cost. A field absent here is a field not captured.
+uuid_path = "uuid"
+parent_uuid_path = "parentUuid"
+
+# Subagent records. `isSidechain: true` marks a turn the Task tool's subagent
+# wrote, not the operator. In practice those records live only in
+# `agent-*.jsonl`, so it is a whole-session property rather than a branch
+# inside a parent transcript.
+sidechain_path = "isSidechain"
+
+# Subagent transcripts are not beside their parent: they live at
+# `<project>/<parent-session-uuid>/subagents/agent-<id>.jsonl`, and a subagent
+# that spawns its own nests one level further.
+#
+# A directory name, not "recurse into everything": `subagents/workflows/wf_*/
+# journal.jsonl` are workflow logs rather than transcripts, and their shared
+# stem would collapse onto one bogus session. The immediate parent directory
+# separates them exactly.
+nested_dir = "subagents"
+model_path = "message.model"
+cache_read_path = "message.usage.cache_read_input_tokens"
+cache_creation_path = "message.usage.cache_creation_input_tokens"
+
+# What this harness is, and what floonet must not assume about it: a
+# one-session-per-process runtime the process scan can find and type into,
+# which cannot renew its own presence (its SessionStart hook fires once; there
+# is no periodic event, which is why the scan exists).
+
+[capabilities]
+# Claude Code spawns short-lived headless sub-conversations (`claude -p` calls
+# made by a session on its own behalf) inside a live pane, and they register
+# exactly like a real one. They are not correspondents: nobody addresses one,
+# it is gone before a reply could arrive, and nothing removes the row, because
+# a hook row is reaped when its process dies and the process is the pane.
+#
+# The discriminator: a sub-conversation's transcript opens with
+# `"type": "queue-operation"`; an interactive session's opens with
+# `last-prompt` or `user`. It is an undocumented value that depends on write
+# order — the public hooks reference offers nothing that separates a headless
+# sub-call from a window someone opened. If the write order changes this check
+# silently stops firing; the sweep bounds that by removing what leaks.
+non_conversation_types = ["queue-operation"]
+scannable   = true    # `ps` + tmux/iTerm2 can find it
+multiplexed = false   # one process : one session
+heartbeats  = false   # cannot renew presence — the scan is authoritative
+pane        = true    # has a tty to type the control string into
+# Substring, not equality: a locally built dev binary named `claude-local`
+# must still match.
+process_match = "claude"
+
+# Not a slash command. Any string beginning with `/` typed into the pane is
+# interpreted by a command menu this project does not control: Claude Code
+# ships a built-in `/floonet` that shadows the plugin's, and the menu matches
+# the plugin prefix before the `:` suffix is considered, so even the
+# namespaced form is swallowed and the built-in runs with the suffix as its
+# argument.
+#
+# Prose costs a little context and depends on the model reading an
+# instruction rather than a command dispatching; what it buys is that nothing
+# between here and the model can reinterpret it. The pane guarantee is
+# unchanged: only a fixed string from an operator-controlled descriptor
+# crosses the pane, never message content. Naming /floonet:inbox inside the
+# prose is fine — it reaches the model as text, and the model invokes its own
+# registered command from there.
+control_string = "Check your floonet inbox: run the /floonet:inbox command, or call the floo_inbox MCP tool directly, then do what each message asks and answer it with floo_reply."
+
+# Session titles Claude Code states, each its own JSONL entry type: `ai-title`
+# is common, `custom-title` is what `/rename` writes.
+#
+# User beats AI regardless of append order. That resolves at read time in SQL
+# (`COALESCE(title_user, title_ai, title_derived)`), so a rename arriving hours
+# into a session wins without a rewrite; declaring `source` is what selects
+# the precedence.
+[[title_rules]]
+entry_type = "custom-title"   # /rename, or --name
+title_path = "customTitle"
+source     = "user"
+
+[[title_rules]]
+entry_type = "ai-title"       # model-generated; the record does not say which
+title_path = "aiTitle"
+source     = "ai"
+
+# Where the conversation's context was replaced. Everything at or before this
+# point is still searchable but is no longer what the model sees.
+#
+# Both conditions are required: the marker is `type:"system"` and
+# `subtype:"compact_boundary"`; matching the type alone would treat every
+# system message as a compaction.
+#
+# `parentUuid` is null on these, with the real parent in `logicalParentUuid`,
+# so the boundary truncates the resume chain — which is why floonet tracks the
+# boundary itself rather than following the chain across it.
+[[compaction_markers]]
+path = "type"
+equals = "system"
+
+[[compaction_markers]]
+path = "subtype"
+equals = "compact_boundary"

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent, never LaunchDaemon: fld reads ~/.claude and talks to
+  the user's tmux sockets — per-user work that must run as the user, not root.
+
+  No app bundle, no code signing, no TCC prompt: nothing fld does in P0-P2
+  touches an Automation-gated API. ~/.claude is the user's own file tree (no
+  Full Disk Access needed), tmux is a unix socket, mDNS and HTTP are
+  unprivileged. AppleScript injection (P3) is what would force a signed .app +
+  SMAppService, and it is deliberately not here.
+
+  __USER__ and __BIN__ are substituted by install.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.teleport.tpd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BIN__</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it crashes, but not if it exits cleanly (a clean exit is
+         an intentional stop, and respawning it would fight the user). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!--
+      NO StandardOutPath. fld writes nothing to stdout under launchd (the one
+      println! answers the version flag), and the path it used to name is now owned
+      by the logger, which opens and ROTATES it. Two owners for one file is how
+      a rotation renames a file the other one still holds open.
+
+      StandardErrorPath stays, and its job narrowed: it captures what the logger
+      cannot — a panic, a dyld failure, anything before logging starts.
+
+      This file used to say it needed no rotation, because nothing writes to it
+      in normal operation. That was true and was the trap: the abnormal case is
+      a daemon that cannot start, which KeepAlive above restarts every ten
+      seconds forever, each attempt appending its error before the logger is
+      reached. The unrotated file grew fastest exactly when no daemon was
+      running to rotate it. fld now bounds this file at startup
+      (`logging::bound_foreign_log`) — renamed rather than truncated, since
+      launchd owns the descriptor.
+    -->
+    <key>StandardErrorPath</key>
+    <string>__USER__/.teleport/tpd.err.log</string>
+</dict>
+</plist>

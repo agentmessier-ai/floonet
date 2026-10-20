@@ -1,0 +1,13 @@
+# Aliases for the inner loop. Nothing here changes how anything builds — these
+# are only shorter names for commands that were already correct.
+
+[alias]
+# `cargo t` — the whole suite minus doctests. The doctest pass dominates wall
+# clock and finds nothing: doc comments here are prose, not examples. Not
+# `doctest = false` per `[lib]`: a real example written later must not be
+# silently skipped forever, so the cost is opt-out rather than removed.
+t = "test --workspace --all-targets"
+
+# The same suite plus doctests, for the release gate, where "an example in the
+# docs still compiles" is worth knowing.
+t-all = "test --workspace"
