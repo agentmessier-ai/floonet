@@ -1,0 +1,169 @@
+# Build the binaries a user downloads instead of compiling.
+#
+# The only workflow here, and deliberately so. It runs on GitHub-hosted macOS
+# and does one job: turn a tag into binaries someone can download.
+#
+# WHY GITHUB-HOSTED. Public repositories get unlimited Actions minutes, so this
+# costs nothing to run — and the alternative has a failure mode worth avoiding:
+# a job requesting a self-hosted label that nothing answers does not fail, it
+# sits queued and is cancelled 24 hours later with an empty runner name. A
+# release workflow that silently never runs is worse than no release workflow.
+#
+# WHAT IT DOES NOT DO. No tests, no clippy, no audit. Those belong to the gates
+# in the private repository, which run before a commit is ever tagged. Repeating
+# them here would double the wall-clock for no additional signal, and a release
+# job that fails on lint teaches people to tag less often rather than to lint
+# more.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual runs build and upload nothing — they exist to prove the workflow
+  # still compiles both targets before a tag depends on it.
+  workflow_dispatch:
+
+permissions:
+  contents: write   # creating the release and uploading assets needs it
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: macos-14
+    strategy:
+      # One broken architecture must not cancel the other: knowing that arm64
+      # is fine and x86_64 is not is more useful than one red X.
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            name: arm64
+          - target: x86_64-apple-darwin
+            name: x86_64
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+
+      # No toolchain action. macos-14 ships rustup, and `rust-toolchain.toml`
+      # pins the version — adding an action here would be a second place to say
+      # which compiler, and the two would drift. `rustup target add` is the one
+      # thing the file cannot express.
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1  # v2.8.1
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --bins
+
+      # The panel ships BUILT, not as source. It is part of the product — it is
+      # where a person sees which sessions are live and whether the peer port is
+      # open — so requiring a Swift toolchain on the installing machine would
+      # make a mandatory piece conditional on something the binaries are not.
+      #
+      # One universal bundle for both archives: `--arch arm64 --arch x86_64`
+      # produces a single fat executable, so this step runs identically in both
+      # matrix legs and the two archives carry the same .app.
+      - name: Build the panel
+        run: |
+          set -euo pipefail
+          cd panel
+          # Through `make`, with the arches passed IN. Building first and then
+          # calling `make bundle` separately did not work: `bundle` depends on
+          # `build`, so make re-ran `swift build` without these flags, which
+          # rebuilt for the host alone and is what got bundled.
+          make bundle SWIFT_FLAGS="--arch arm64 --arch x86_64"
+          # A bundle that is not universal would install and then fail to launch
+          # on the other architecture, which looks like a broken panel rather
+          # than a broken build. ASSERTED, not printed: `lipo -archs` exits 0
+          # whatever it finds, so the check that was here reported the single
+          # architecture it was meant to catch and let the release go green.
+          archs="$(lipo -archs FloonetPanel.app/Contents/MacOS/FloonetPanel)"
+          echo "panel architectures: $archs"
+          for want in arm64 x86_64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::error::panel bundle has no $want slice ($archs) — the $want archive would install an app that cannot launch" >&2; exit 1 ;;
+            esac
+          done
+
+      # Named for what a person downloading it needs to know: which tool, which
+      # architecture. The tag is in the release title, not repeated here.
+      - name: Package
+        run: |
+          set -euo pipefail
+          out="floonet-${{ matrix.name }}"
+          mkdir -p "$out"
+          cp target/${{ matrix.target }}/release/fl \
+             target/${{ matrix.target }}/release/fld "$out/"
+          # install.sh is what turns two binaries into a working install, and a
+          # user who downloaded an archive does not have the repository.
+          #
+          # `plugin/` is here because install.sh reads two files out of it on
+          # every run, with no guard: the `/tp` command and the skill. Shipping
+          # install.sh without them produced an archive whose installer died on
+          # its first `install -m 644` — the whole point of packaging the
+          # installer is that it works where the repository is absent, and it
+          # did not. `integrations/` is here for the same reason: install.sh
+          # copies the pi extension out of it whenever ~/.pi/agent exists, with
+          # no guard on the source — an archive without it aborted mid-install,
+          # after fld had already been started. The list below is derived from
+          # the paths install.sh references outside a guard, not from memory:
+          # `Cargo.toml` is checked for before use and is not needed here.
+          #
+          # `panel/` SOURCE is not shipped; the bundle built above is, because
+          # the panel is mandatory and the installing machine may have no Swift
+          # toolchain. Found by installing a release archive on a clean Mac:
+          # `panel/` was absent, install.sh's guard executed `:`, and the machine
+          # ended up with a working floonet, no menu bar icon, and nothing said
+          # about either.
+          cp -R install plugin .claude-plugin integrations "$out/"
+          cp -R panel/FloonetPanel.app "$out/"
+          cp LICENSE README.md "$out/"
+          tar -czf "$out.tar.gz" "$out"
+          shasum -a 256 "$out.tar.gz" > "$out.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: floonet-${{ matrix.name }}
+          path: |
+            floonet-${{ matrix.name }}.tar.gz
+            floonet-${{ matrix.name }}.tar.gz.sha256
+
+  release:
+    name: Publish
+    needs: build
+    # Only a tag produces a release. A manual run stops after `build`, having
+    # proved both targets compile.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        # Everything from `github.*` goes through env and is quoted at use.
+        # Neither of these is attacker-controllable — a tag push needs write
+        # access — but `${{ }}` expanded directly into a shell line is the shape
+        # of workflow injection, and a release job holds `contents: write`.
+        # Keeping the safe shape everywhere means never having to re-derive
+        # which interpolation was the harmless one.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ls -la dist
+          # --verify-tag: refuse to invent a tag. A release created from a ref
+          # that is not a real tag would be a release nothing can be built from.
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "$TAG" \
+            --generate-notes \
+            --verify-tag \
+            dist/*

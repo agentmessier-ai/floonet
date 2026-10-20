@@ -1,0 +1,12 @@
+-- The read/ack split. `read_at` means a message was shown to an inbox call;
+-- `drain` sets it the moment it fetches, so an agent interrupted between
+-- fetching and acting leaves a message read and unhandled with no trace.
+--
+-- `acked_at` is a separate, explicit confirmation. `read_at` set and
+-- `acked_at` NULL is exactly that state — delivered, not confirmed — and it
+-- stays queryable until something acks it (`tp ack <id>` / `floo_ack`).
+--
+-- NULL for every existing row, including already-read ones: nothing recorded
+-- whether an old message was finished, so the honest state is "pending" —
+-- visible under the pending-ack view rather than silently declared handled.
+ALTER TABLE message ADD COLUMN acked_at INTEGER;

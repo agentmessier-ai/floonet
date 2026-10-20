@@ -1,0 +1,35 @@
+{
+  "description": "floonet session registration — makes this session reachable by `fl ask`. See README.md in this directory.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/fl\" register --from-hook"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/fl\" register --from-hook >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.local/bin/fl\" unregister --from-hook"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,118 @@
+# dsh (DeepSeek Harness), read from its JSONL session-persistence backend.
+#
+# dsh's persistence has two interchangeable backends: `session-persistence-jsonl`,
+# which writes the files this descriptor reads, and `session-persistence-sqlite`,
+# which puts every session in one shared database. This descriptor only reads
+# the first: under the sqlite backend floonet finds nothing — an empty answer,
+# not an error.
+id = "dsh"
+name = "dsh"
+# `$DSH_HOME` moves dsh's whole home; `~/.dsh` is only the default. Naming
+# just the default would find zero sessions on a machine that sets it.
+root = "${DSH_HOME:-~/.dsh}/sessions"
+
+# `<root>/--<cwd-slug>--/session-<uuid>/session.jsonl.zstd` — one level deeper
+# than a transcript straight in the project dir.
+dir_depth = 2
+
+# Zstandard by default (`DEFAULT_COMPRESSION = 'zstd'`), plaintext when the user
+# sets `compression: none`. Both are listed because naming only one would report
+# zero sessions for half the possible configurations.
+file_suffix = [".jsonl.zstd", ".jsonl"]
+
+# Every file is called `session`, so the id is the DIRECTORY's name. A rule over
+# the stem would give every session on the machine the same id.
+native_id = "parent_dir"
+
+# dsh stamps its own format version on the header line and promises no
+# compatibility across versions. Everything below describes v0; meeting a
+# version this build was not written against, floonet refuses the file and
+# says which version it saw, rather than reporting whatever survives v0's
+# paths as the conversation.
+version_path = "version"
+supported_versions = [0]
+
+# Epoch MILLISECONDS, not RFC3339: `"time":1786767323971`.
+ts_path = "time"
+cwd_path = "cwd"
+
+# Blocks. `reasoning` is dsh's thinking; it is plain text with no signature, so
+# nothing here is opaque.
+text_block = "text"
+thinking_block = "reasoning"
+# The reasoning block keeps its words in `text`, not in a field named after
+# the block; the default (same name as the type) reads back empty.
+thinking_field = "text"
+tool_block = "tool-call"
+tool_name_field = "name"
+tool_input_field = "arguments"
+
+# Roles come from the entry rules below, not from a role field. Stated anyway
+# because the engine requires them; nothing reaches the role mapping.
+role_source = "entry_type"
+user_roles = []
+assistant_roles = []
+content_path = "data.content"
+
+# The two message shapes sit at different paths, which is why `entry_rules`
+# carry a `content_path`:
+#
+#   user/message      → data.content            [{"type":"text","text":…}]
+#   assistant/message → data.message.content    [{"type":"reasoning"…},{"type":"text"…},{"type":"tool-call"…}]
+#
+# The assistant's is the nested one and carries reasoning and tool calls.
+[[entry_rules]]
+entry_type = "user/message"
+role = "user"
+content_path = "data.content"
+
+[[entry_rules]]
+entry_type = "assistant/message"
+role = "assistant"
+content_path = "data.message.content"
+usage_in_path = "data.usage.inputTokens"
+usage_out_path = "data.usage.outputTokens"
+
+# dsh names its own sessions. `source = "ai"` because dsh never asks the user:
+# the record's `source.kind` is either `fallback` (the first message,
+# truncated) or a model-generated title. Claiming `user` would outrank a real
+# rename if dsh ever adds one.
+[[title_rules]]
+entry_type = "session/title"
+title_path = "data.title"
+source = "ai"
+
+# No `[[compaction_markers]]`. dsh may compact, but nothing in the format has
+# been shown to mark a compaction boundary, and guessing one would report live
+# turns as superseded. Empty means floonet records `unknown`.
+
+# What dsh is, and what floonet must not assume about it. These four differ
+# from every other runtime floonet reads.
+[capabilities]
+# Not scannable, and no `process_match`. dsh runs as a local web server
+# launched through a package manager, so its `comm` is `node`: a pattern of
+# `dsh` matches nothing (the string is in the arguments, which the scan does
+# not read) and a pattern of `node` would claim every node process. floonet
+# finds dsh sessions by no other means than `fl register`.
+scannable   = false
+# One server, many sessions. Every other runtime here is one process per
+# conversation; dsh's `ctx.sessions` holds all of them at once, so a pid
+# identifies the server, never a conversation.
+multiplexed = true
+# It can renew its own presence: it is a long-lived process with a plugin
+# surface, not a hook that fires once.
+heartbeats  = true
+# No tty. There is no pane to type a control string into, which is why no
+# `control_string` is declared: floonet reaches a dsh session through its
+# registration, or not at all.
+pane        = false
+# `fl reply` is a shell command, and dsh's shell is sandboxed to the session
+# workspace, so a write to the mailbox in `~/.teleport` fails as a readonly
+# database. The plugin's own `floo_reply` is spawned from the dsh host
+# process, outside that confinement, and writes the same database to
+# heartbeat.
+reply_hint  = "the floo_reply tool (message_id: {id}). NOT `fl reply` — dsh's shell is sandboxed to the session workspace and cannot write floonet's mailbox"
+# `fl ack` is the same shell command under the same sandbox. Declared rather
+# than inferred from `reply_hint`: two facts, stated separately, so neither can
+# be silently wrong because the other was right.
+ack_hint    = "the floo_ack tool"

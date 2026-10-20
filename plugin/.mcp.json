@@ -1,0 +1,8 @@
+{
+  "floonet": {
+    "command": "fl",
+    "args": [
+      "mcp"
+    ]
+  }
+}
